@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Creator Insights</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+    <!-- Top Navigation Bar -->
+    <div class="topbar">
+        <div class="brand">
+            <div class="logo">CI</div>
+            <div>
+                <div class="title">Creator Insights</div>
+                <div class="subtitle">Actionable posting & content recommendations</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-layout">
+        <!-- Sidebar with Filters -->
+        <aside class="sidebar">
+            <h3>Filters</h3>
+            
+            <!-- Platform Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('platform-accordion')">
+                    <span>Platform</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="platform-accordion">
+                    <div class="filter-select-all">
+                        <a href="#" onclick="selectAllFilters('platform'); return false;">Select All</a>
+                        <a href="#" onclick="deselectAllFilters('platform'); return false;">Deselect All</a>
+                    </div>
+                    <div class="checkbox-scroll" id="platform-filter">
+                        {% for platform in filter_options.platforms %}
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="platform" value="{{ platform }}" checked>
+                            {{ platform }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Post Type Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('posttype-accordion')">
+                    <span>Post Type</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="posttype-accordion">
+                    <div class="filter-select-all">
+                        <a href="#" onclick="selectAllFilters('post-type'); return false;">Select All</a>
+                        <a href="#" onclick="deselectAllFilters('post-type'); return false;">Deselect All</a>
+                    </div>
+                    <div class="checkbox-scroll" id="post-type-filter">
+                        {% for pt in filter_options.post_types %}
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="post-type" value="{{ pt }}" checked>
+                            {{ pt }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content Niche Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('niche-accordion')">
+                    <span>Content Niche</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="niche-accordion">
+                    <div class="filter-select-all">
+                        <a href="#" onclick="selectAllFilters('niche'); return false;">Select All</a>
+                        <a href="#" onclick="deselectAllFilters('niche'); return false;">Deselect All</a>
+                    </div>
+                    <div class="checkbox-scroll" id="niche-filter">
+                        {% for niche in filter_options.niches %}
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="niche" value="{{ niche }}" checked>
+                            {{ niche }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Metric Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('metric-accordion')">
+                    <span>Metric</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="metric-accordion">
+                    <div class="filter-select-all">
+                        <a href="#" onclick="selectAllFilters('metric'); return false;">Select All</a>
+                        <a href="#" onclick="deselectAllFilters('metric'); return false;">Deselect All</a>
+                    </div>
+                    <div class="checkbox-scroll" id="metric-filter">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="metric" value="Engagement Rate" checked>
+                            Engagement Rate
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="metric" value="Likes" checked>
+                            Likes
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="metric" value="Comments" checked>
+                            Comments
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="metric" value="Shares" checked>
+                            Shares
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="metric" value="Impressions" checked>
+                            Impressions
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Age Range Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('age-accordion')">
+                    <span>Audience Age</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="age-accordion">
+                    <div class="range-display">
+                        <span id="age-min-val">{{ filter_options.age_min }}</span> - 
+                        <span id="age-max-val">{{ filter_options.age_max }}</span>
+                    </div>
+                    <input type="range" id="age-min" min="{{ filter_options.age_min }}" 
+                           max="{{ filter_options.age_max }}" value="{{ filter_options.age_min }}"
+                           class="range-slider">
+                    <input type="range" id="age-max" min="{{ filter_options.age_min }}" 
+                           max="{{ filter_options.age_max }}" value="{{ filter_options.age_max }}"
+                           class="range-slider">
+                </div>
+            </div>
+
+            <!-- Gender Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('gender-accordion')">
+                    <span>Audience Gender</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="gender-accordion">
+                    <div class="filter-select-all">
+                        <a href="#" onclick="selectAllFilters('gender'); return false;">Select All</a>
+                        <a href="#" onclick="deselectAllFilters('gender'); return false;">Deselect All</a>
+                    </div>
+                    <div class="checkbox-scroll" id="gender-filter">
+                        {% for gender in filter_options.genders %}
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="gender" value="{{ gender }}" checked>
+                            {{ gender }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Country Filter -->
+            <div class="filter-accordion">
+                <div class="filter-accordion-header" onclick="toggleAccordion('country-accordion')">
+                    <span>Country</span>
+                    <span class="accordion-arrow">▼</span>
+                </div>
+                <div class="filter-accordion-content" id="country-accordion">
+                    <div class="filter-select-all">
+                        <a href="#" onclick="selectAllFilters('country'); return false;">Select All</a>
+                        <a href="#" onclick="deselectAllFilters('country'); return false;">Deselect All</a>
+                    </div>
+                    <div class="checkbox-scroll" id="country-filter">
+                        {% for country in filter_options.countries %}
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="country" value="{{ country }}" checked>
+                            {{ country }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Show All Visualizations -->
+            <div class="filter-option-standalone">
+                <label class="checkbox-label-single">
+                    <input type="checkbox" id="show-all">
+                    <span>Show All Visualizations</span>
+                </label>
+            </div>
+
+            <button class="btn-primary btn-full" onclick="applyFilters()">Apply Filters</button>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- KPI Cards -->
+            <div class="kpi-container">
+                <div class="metric-card">
+                    <div class="metric-label">Total Posts</div>
+                    <div class="metric-value" id="total-posts">Loading...</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Avg Engagement Rate</div>
+                    <div class="metric-value" id="avg-engagement">Loading...</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Avg Impressions</div>
+                    <div class="metric-value" id="avg-impressions">Loading...</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Selected Role</div>
+                    <div class="metric-value">{{ user_type }}</div>
+                </div>
+            </div>
+
+            <!-- Charts Container -->
+            <div id="loading-spinner" class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Loading insights...</p>
+            </div>
+
+            <div id="charts-container" class="charts-grid" style="display: none;">
+                <!-- Charts will be dynamically inserted here -->
+            </div>
+
+            <!-- Insights Panel -->
+            <div class="insights-section">
+                <h2>Automated Insights & Recommendations</h2>
+                <div class="insights-grid">
+                    <div class="insights-content">
+                        <div class="insight-item">
+                            <strong>Best Posting Hours:</strong>
+                            <span id="insight-hours">Loading...</span>
+                        </div>
+                        <div class="insight-item">
+                            <strong>Top Content Niche:</strong>
+                            <span id="insight-niche">Loading...</span>
+                        </div>
+                        <div class="insight-item">
+                            <strong>Top Post Type:</strong>
+                            <span id="insight-type">Loading...</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Notes</div>
+                        <div class="small-muted">Use the filters to narrow the audience. Click Show All Visualizations to explore the full suite.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                Built with Flask • Dataset: social_media_data_with_niches.csv
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+    <script>
+        // Initial load
+        window.addEventListener('DOMContentLoaded', function() {
+            applyFilters();
+        });
+
+        // Age range sliders
+        document.getElementById('age-min').addEventListener('input', function() {
+            document.getElementById('age-min-val').textContent = this.value;
+            if (parseInt(this.value) > parseInt(document.getElementById('age-max').value)) {
+                document.getElementById('age-max').value = this.value;
+                document.getElementById('age-max-val').textContent = this.value;
+            }
+        });
+
+        document.getElementById('age-max').addEventListener('input', function() {
+            document.getElementById('age-max-val').textContent = this.value;
+            if (parseInt(this.value) < parseInt(document.getElementById('age-min').value)) {
+                document.getElementById('age-min').value = this.value;
+                document.getElementById('age-min-val').textContent = this.value;
+            }
+        });
+    </script>
+</body>
+</html>
