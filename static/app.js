@@ -134,12 +134,13 @@ function renderCharts(charts, defaultGraphs, showAll) {
 
     // Define chart order for layout (pairs for 2-column grid)
     const chartOrder = [
-        'heatmap', 'content_mix', 
-        'funnel', 'weekend',
+        'country_map', 'content_mix',
+        'heatmap', 'funnel',
+        'viral_patterns', 'platform_radar',
         'best_hour', 'best_day',
         'age', 'gender',
         'virality', 'niche_perf',
-        'platform_comp', 'country_map',
+        'platform_comp', 'weekend',
         'metrics_heatmap'
     ];
 
@@ -159,7 +160,9 @@ function renderCharts(charts, defaultGraphs, showAll) {
         const graphMapping = {
             'heatmap': 'heatmap',
             'content_mix': 'content_mix',
+            'viral_patterns': 'viral_patterns',
             'funnel': 'funnel',
+            'platform_radar': 'platform_radar',
             'weekend': 'weekend',
             'best_hour': 'best_hour',
             'best_day': 'best_day',

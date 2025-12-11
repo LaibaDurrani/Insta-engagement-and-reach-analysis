@@ -657,6 +657,16 @@ body {
     flex-direction: column;
 }
 
+/* Viral Content Patterns treemap - single column, side by side with radar */
+#chart-viral_patterns {
+    min-height: 500px;
+    padding: 10px 0;
+}
+
+#chart-viral_patterns > div {
+    width: 100% !important;
+}
+
 .chart-container > div {
     flex: 1;
     min-height: 0;

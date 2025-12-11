@@ -8,6 +8,13 @@ import json
 from datetime import datetime
 import base64
 
+try:
+    from sklearn.preprocessing import MinMaxScaler
+    HAS_SKLEARN = True
+except ImportError:
+    HAS_SKLEARN = False
+    print("WARNING: scikit-learn not installed. Platform radar chart will use manual normalization.")
+
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-in-production'
 
@@ -39,10 +46,10 @@ def decode_plotly_bdata(fig_dict):
             
             # Replace NaN with None for JSON serialization
             arr_list = arr.tolist()
-            return [None if pd.isna(x) else x for x in arr_list]
+            return [None if isinstance(x, (float, np.floating)) and pd.isna(x) else x for x in arr_list]
         elif isinstance(val, np.ndarray):
             arr_list = val.tolist()
-            return [None if pd.isna(x) else x for x in arr_list]
+            return [None if isinstance(x, (float, np.floating)) and pd.isna(x) else x for x in arr_list]
         elif isinstance(val, (float, np.floating)) and pd.isna(val):
             return None
         elif isinstance(val, dict):
@@ -135,7 +142,9 @@ def get_aggregates(df):
 # Chart Functions
 # -------------------------
 def heatmap_day_hour(df, metric='Engagement Rate'):
+    print(f"DEBUG heatmap_day_hour: Starting. Rows={len(df)}, Metric={metric}")
     if 'Weekday' not in df.columns or 'Hour' not in df.columns or 'Post Type' not in df.columns:
+        print("DEBUG heatmap_day_hour: Missing required columns")
         return {}
     
     weekday_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
@@ -160,8 +169,10 @@ def heatmap_day_hour(df, metric='Engagement Rate'):
                         })
     
     if not best_type_data:
+        print("DEBUG heatmap_day_hour: No best_type_data")
         return {}
     
+    print(f"DEBUG heatmap_day_hour: Created {len(best_type_data)} data points")
     result_df = pd.DataFrame(best_type_data)
     result_df['Weekday'] = pd.Categorical(result_df['Weekday'], categories=weekday_order, ordered=True)
     result_df = result_df.sort_values(['Weekday','Hour'])
@@ -195,6 +206,7 @@ def heatmap_day_hour(df, metric='Engagement Rate'):
         margin=dict(l=20,r=20,t=60,b=20)
     )
     
+    print("DEBUG heatmap_day_hour: Chart created successfully")
     return decode_plotly_bdata(fig.to_dict())
 
 def metrics_by_weekday_heatmap(df):
@@ -301,12 +313,140 @@ def bar_weekend_vs_weekday(df, metric='Engagement Rate'):
     fig.update_layout(height=380, margin=dict(l=20,r=20,t=40,b=20))
     return decode_plotly_bdata(fig.to_dict())
 
-def content_mix(df):
-    if 'Post Type' not in df or 'Platform' not in df:
+def competitive_niche_analysis(df, metric='Engagement Rate'):
+    """Competitive Niche Analysis: bubble chart showing engagement vs shares by niche"""
+    print(f"DEBUG competitive_niche_analysis: Starting. Rows={len(df)}, Columns={df.columns.tolist()}")
+    
+    if 'Content Niche' not in df.columns:
+        print("DEBUG competitive_niche_analysis: Content Niche column not found")
         return {}
-    df2 = df.groupby(['Platform','Post Type']).size().reset_index(name='count')
-    fig = px.bar(df2, x='Platform', y='count', color='Post Type', title='Content Mix by Platform')
-    fig.update_layout(height=420, margin=dict(l=20,r=20,t=40,b=20))
+    
+    if 'Shares' not in df.columns:
+        print("DEBUG competitive_niche_analysis: Shares column not found")
+        return {}
+    
+    if metric not in df.columns:
+        print(f"DEBUG competitive_niche_analysis: Metric '{metric}' not found")
+        return {}
+    
+    # Aggregate by Content Niche
+    agg_dict = {
+        metric: 'mean',
+        'Shares': 'mean'
+    }
+    
+    niche_stats = df.groupby('Content Niche').agg(agg_dict).reset_index()
+    niche_stats['Post Count'] = df.groupby('Content Niche').size().values
+    niche_stats.columns = ['Content Niche', 'Avg Engagement', 'Avg Shares', 'Post Count']
+    
+    print(f"DEBUG competitive_niche_analysis: Aggregated {len(niche_stats)} niches")
+    print(f"DEBUG competitive_niche_analysis: Sample data:\n{niche_stats.head()}")
+    
+    # Remove rows with NaN values
+    niche_stats = niche_stats.dropna()
+    
+    if niche_stats.empty:
+        print("DEBUG competitive_niche_analysis: No data after dropna")
+        return {}
+    
+    # Create scatter plot with bubble sizes
+    # Calculate appropriate sizeref for better bubble scaling
+    max_post_count = niche_stats['Post Count'].max()
+    sizeref = max_post_count / (15 ** 2)  # Adjust denominator to control max bubble size
+    
+    fig = px.scatter(
+        niche_stats,
+        x='Avg Engagement',
+        y='Avg Shares',
+        size='Post Count',
+        color='Content Niche',
+        hover_data=['Content Niche', 'Avg Engagement', 'Avg Shares', 'Post Count'],
+        title='Competitive Niche Analysis (All Platform)',
+        labels={
+            'Avg Engagement': 'Avg Engagement Rate',
+            'Avg Shares': 'Avg Shares',
+            'Post Count': 'Number of Posts'
+        }
+    )
+    
+    fig.update_layout(
+        height=450,
+        margin=dict(l=20, r=20, t=60, b=20),
+        showlegend=True,
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02)
+    )
+    
+    fig.update_traces(marker=dict(
+        sizemode='area',
+        sizeref=sizeref,
+        sizemin=4,
+        line=dict(width=2, color='white'),
+        opacity=0.7
+    ))
+    
+    print("DEBUG competitive_niche_analysis: Chart created successfully")
+    return decode_plotly_bdata(fig.to_dict())
+
+def viral_content_patterns(df):
+    """Viral Content Patterns: Treemap showing Platform → Post Type → Niche for top 5% posts"""
+    required_cols = {'Platform', 'Post Type', 'Content Niche', 'Share Amplification', 'Engagement Rate'}
+    if not required_cols.issubset(df.columns):
+        print(f"DEBUG viral_content_patterns: Missing required columns. Have: {df.columns.tolist()}")
+        return {}
+    
+    # Filter for top 5% posts by engagement rate
+    threshold = df['Engagement Rate'].quantile(0.95)
+    top_posts = df[df['Engagement Rate'] >= threshold].copy()
+    
+    print(f"DEBUG viral_content_patterns: Threshold={threshold:.2f}, Top posts={len(top_posts)}")
+    
+    if len(top_posts) == 0:
+        print("DEBUG viral_content_patterns: No top posts found")
+        return {}
+    
+    # Aggregate by Platform, Post Type, and Content Niche
+    viral_stats = top_posts.groupby(['Platform', 'Post Type', 'Content Niche']).agg({
+        'Share Amplification': 'mean',
+        'Engagement Rate': 'count'
+    }).reset_index()
+    viral_stats.columns = ['Platform', 'Post Type', 'Content Niche', 'Avg Share Amplification', 'Post Count']
+    
+    print(f"DEBUG viral_content_patterns: Aggregated {len(viral_stats)} combinations")
+    print(f"DEBUG viral_content_patterns: Sample:\n{viral_stats.head()}")
+    
+    # Use plotly express treemap with path for simplicity
+    viral_stats['Full Path'] = (viral_stats['Platform'] + '/' + 
+                                 viral_stats['Post Type'] + '/' + 
+                                 viral_stats['Content Niche'])
+    
+    fig = px.treemap(
+        viral_stats,
+        path=['Platform', 'Post Type', 'Content Niche'],
+        values='Post Count',
+        color='Avg Share Amplification',
+        color_continuous_scale='Blues',
+        title='Viral Content Patterns: Platform → Post Type → Niche (Top 5% Posts)'
+    )
+    
+    fig.update_layout(
+        height=550,
+        margin=dict(l=0, r=0, t=60, b=20),
+        paper_bgcolor='white',
+        plot_bgcolor='white',
+        coloraxis_showscale=False
+    )
+    
+    # Update treemap to use more horizontal space
+    fig.update_traces(
+        textposition='middle center',
+        textinfo='label+value',
+        tiling=dict(packing='squarify', pad=4),
+        hovertemplate='<b>%{label}</b><br>Post Count: %{value}<br>Avg Share Amplification: %{color:.2f}<extra></extra>',
+        textfont=dict(size=11),
+        insidetextfont=dict(size=10)
+    )
+    
+    print("DEBUG viral_content_patterns: Chart created successfully")
     return decode_plotly_bdata(fig.to_dict())
 
 def funnel_plot(df):
@@ -318,8 +458,19 @@ def funnel_plot(df):
         reach = sub['Reach'].sum() if 'Reach' in sub else np.nan
         engagement = (sub[['Likes','Comments','Shares']].sum().sum() if set(['Likes','Comments','Shares']).issubset(sub.columns) else np.nan)
         values = [impressions, reach, engagement]
-        fig.add_trace(go.Funnel(name=p, y=['Impressions','Reach','Engagement'], x=values))
-    fig.update_layout(title='Impressions → Reach → Engagement Funnel', height=480)
+        fig.add_trace(go.Funnel(
+            name=p, 
+            y=['Impressions','Reach','Engagement'], 
+            x=values,
+            textposition='inside',
+            textinfo='value'
+        ))
+    fig.update_layout(
+        title='Impressions → Reach → Engagement Funnel', 
+        height=480,
+        paper_bgcolor='white',
+        plot_bgcolor='white'
+    )
     return decode_plotly_bdata(fig.to_dict())
 
 def best_hour_line(df, metric='Engagement Rate'):
@@ -380,8 +531,28 @@ def country_choropleth(df, metric='Engagement Rate'):
         return {}
     df2 = df.groupby('Audience Location')[metric].mean().reset_index().rename(columns={'Audience Location':'country'})
     # Use country names for now, as ISO-3 conversion would require a mapping library
-    fig = px.choropleth(df2, locations='country', locationmode='country names', color=metric, title=f'{metric} by Country')
-    fig.update_layout(height=500, margin=dict(l=10,r=10,t=40,b=10), showlegend=True)
+    # Custom colorscale using funnel plot colors (blue, coral, green, purple)
+    custom_colorscale = [
+        [0.0, 'rgb(99, 110, 250)'],      # LinkedIn blue
+        [0.33, 'rgb(239, 85, 59)'],      # Instagram coral/red
+        [0.66, 'rgb(0, 204, 150)'],      # Twitter green
+        [1.0, 'rgb(171, 99, 250)']       # Facebook purple
+    ]
+    fig = px.choropleth(
+        df2, 
+        locations='country', 
+        locationmode='country names', 
+        color=metric, 
+        title=f'{metric} by Country',
+        color_continuous_scale=custom_colorscale
+    )
+    fig.update_layout(
+        height=500, 
+        margin=dict(l=10,r=10,t=40,b=10), 
+        showlegend=True,
+        paper_bgcolor='white',
+        plot_bgcolor='white'
+    )
     return decode_plotly_bdata(fig.to_dict())
 
 def platform_comp(df):
@@ -392,6 +563,162 @@ def platform_comp(df):
         df2 = df.groupby('Platform').agg({'Engagement Rate':'mean'}).reset_index()
         fig = px.scatter(df2, x='Engagement Rate', y='Engagement Rate', hover_name='Platform', title='Platform Benchmark')
     fig.update_layout(height=420)
+    return decode_plotly_bdata(fig.to_dict())
+
+def platform_radar_chart(df):
+    """Radar chart showing platform performance across key metrics (normalized 0-100) using MinMaxScaler"""
+    print(f"DEBUG platform_radar: Starting with {len(df)} rows")
+    print(f"DEBUG platform_radar: Available columns: {df.columns.tolist()}")
+    
+    if 'Platform' not in df.columns:
+        print("DEBUG platform_radar: No Platform column found")
+        return {}
+    
+    # Define metrics to aggregate (matching notebook code exactly)
+    agg_dict = {}
+    metric_labels = []
+    
+    # Check for True Engagement Rate first, then fallback to Engagement Rate
+    if 'True Engagement Rate' in df.columns:
+        agg_dict['True Engagement Rate'] = 'median'
+        metric_labels.append('True Engagement Rate')
+        print("DEBUG platform_radar: Found True Engagement Rate")
+    elif 'Engagement Rate' in df.columns:
+        agg_dict['Engagement Rate'] = 'median'
+        metric_labels.append('True Engagement Rate')
+        print("DEBUG platform_radar: Using Engagement Rate as True Engagement Rate")
+    
+    if 'Interaction Rate' in df.columns:
+        agg_dict['Interaction Rate'] = 'median'
+        metric_labels.append('Interaction Rate')
+        print("DEBUG platform_radar: Found Interaction Rate")
+    
+    if 'Share Amplification' in df.columns:
+        agg_dict['Share Amplification'] = 'median'
+        metric_labels.append('Share Amplification')
+        print("DEBUG platform_radar: Found Share Amplification")
+    
+    if 'Exposure Efficiency' in df.columns:
+        agg_dict['Exposure Efficiency'] = 'median'
+        metric_labels.append('Exposure Efficiency')
+        print("DEBUG platform_radar: Found Exposure Efficiency")
+    
+    if 'Reach' in df.columns:
+        agg_dict['Reach'] = 'mean'
+        metric_labels.append('Reach')
+        print("DEBUG platform_radar: Found Reach")
+    
+    print(f"DEBUG platform_radar: Total metrics found: {len(agg_dict)}")
+    print(f"DEBUG platform_radar: Metrics to aggregate: {list(agg_dict.keys())}")
+    
+    if not agg_dict:
+        print("DEBUG platform_radar: No metrics available")
+        return {}
+    
+    # Aggregate metrics by platform
+    try:
+        platform_metrics = df.groupby('Platform').agg(agg_dict).round(2)
+        print(f"DEBUG platform_radar: Aggregated data shape: {platform_metrics.shape}")
+        print(f"DEBUG platform_radar: Platform metrics:\n{platform_metrics}")
+    except Exception as e:
+        print(f"DEBUG platform_radar: Error aggregating data: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
+    
+    if len(platform_metrics) == 0:
+        print("DEBUG platform_radar: No platform data after aggregation")
+        return {}
+    
+    print(f"DEBUG platform_radar: Platforms: {platform_metrics.index.tolist()}")
+    print(f"DEBUG platform_radar: Metrics: {list(platform_metrics.columns)}")
+    
+    # Normalize metrics to 0-100 scale using MinMaxScaler (matching notebook)
+    if HAS_SKLEARN:
+        scaler = MinMaxScaler(feature_range=(0, 100))
+        platform_metrics_scaled = pd.DataFrame(
+            scaler.fit_transform(platform_metrics),
+            columns=platform_metrics.columns,
+            index=platform_metrics.index
+        )
+        print("DEBUG platform_radar: Using sklearn MinMaxScaler for normalization")
+    else:
+        # Manual normalization if sklearn not available
+        platform_metrics_scaled = platform_metrics.copy()
+        for col in platform_metrics.columns:
+            min_val = platform_metrics[col].min()
+            max_val = platform_metrics[col].max()
+            if max_val > min_val:
+                platform_metrics_scaled[col] = ((platform_metrics[col] - min_val) / (max_val - min_val)) * 100
+            else:
+                platform_metrics_scaled[col] = 50
+        print("DEBUG platform_radar: Using manual normalization (sklearn not available)")
+    
+    # Create the figure
+    fig = go.Figure()
+    
+    # Define colors for each platform to match the reference image exactly
+    platform_colors = {
+        'Facebook': {'line': 'rgb(138, 123, 221)', 'fill': 'rgba(138, 123, 221, 0.65)'},
+        'Instagram': {'line': 'rgb(255, 127, 114)', 'fill': 'rgba(255, 127, 114, 0.65)'},
+        'LinkedIn': {'line': 'rgb(92, 219, 211)', 'fill': 'rgba(92, 219, 211, 0.65)'},
+        'Twitter': {'line': 'rgb(180, 151, 231)', 'fill': 'rgba(180, 151, 231, 0.65)'}
+    }
+    
+    # Add trace for each platform
+    for platform in platform_metrics_scaled.index:
+        values = platform_metrics_scaled.loc[platform].values.tolist()
+        print(f"DEBUG platform_radar: {platform} scaled values: {values}")
+        
+        color_config = platform_colors.get(platform, {'line': 'rgb(100, 100, 100)', 'fill': 'rgba(100, 100, 100, 0.65)'})
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=metric_labels if metric_labels else platform_metrics_scaled.columns.tolist(),
+            fill='toself',
+            name=platform,
+            line=dict(color=color_config['line'], width=2.5),
+            fillcolor=color_config['fill'],
+            marker=dict(size=7, symbol='circle'),
+            opacity=1.0
+        ))
+    
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                showticklabels=True,
+                ticks='',
+                tickfont=dict(size=10),
+                gridcolor='rgba(189, 199, 216, 0.4)',
+                gridwidth=1
+            ),
+            angularaxis=dict(
+                gridcolor='rgba(189, 199, 216, 0.4)',
+                gridwidth=1,
+                linecolor='rgba(189, 199, 216, 0.6)'
+            ),
+            bgcolor='rgba(225, 235, 245, 0.6)'
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation='v',
+            yanchor='top',
+            y=1,
+            xanchor='left',
+            x=1.02,
+            bgcolor='rgba(255, 255, 255, 0.8)',
+            bordercolor='rgba(200, 200, 200, 0.3)',
+            borderwidth=1
+        ),
+        title='Platform Performance Across Key Metrics (Normalized 0-100)',
+        height=550,
+        font=dict(size=11, color='rgb(60, 70, 90)'),
+        plot_bgcolor='white',
+        paper_bgcolor='white'
+    )
+    
+    print("DEBUG platform_radar_chart: Chart created successfully")
     return decode_plotly_bdata(fig.to_dict())
 
 # -------------------------
@@ -477,17 +804,17 @@ def get_data():
     
     # User type to default graphs mapping
     mapping = {
-        'Instagram Creator': ['heatmap','content_mix','funnel','country_map'],
-        'Facebook Page Admin': ['weekend','age_gender','content_mix','country_map'],
-        'YouTube Creator': ['best_hour','funnel','age_dist','country_map'],
-        'Twitter/X Influencer': ['best_hour','virality','niche_perf','country_map'],
-        'LinkedIn Professional': ['best_day','content_mix','country_map'],
-        'Social Media Analyst': ['platform_comp','funnel','heatmap'],
-        'Small Business Owner': ['best_hour','best_day','content_mix','country_map'],
-        'Multi-platform Creator': ['heatmap','platform_comp','best_hour','country_map'],
-        'Agency / Marketing Team': ['platform_comp','funnel','country_map'],
-        'Beginner Creator': ['best_hour','best_day','content_mix','country_map'],
-        'Explorer': ['heatmap','content_mix','funnel','country_map']
+        'Instagram Creator': ['heatmap','content_mix','viral_patterns','funnel','country_map','platform_radar'],
+        'Facebook Page Admin': ['weekend','age_gender','content_mix','country_map','platform_radar'],
+        'YouTube Creator': ['best_hour','funnel','age_dist','country_map','platform_radar'],
+        'Twitter/X Influencer': ['best_hour','virality','viral_patterns','niche_perf','country_map','platform_radar'],
+        'LinkedIn Professional': ['best_day','content_mix','country_map','platform_radar'],
+        'Social Media Analyst': ['platform_comp','viral_patterns','funnel','heatmap','platform_radar'],
+        'Small Business Owner': ['best_hour','best_day','content_mix','country_map','platform_radar'],
+        'Multi-platform Creator': ['heatmap','platform_comp','viral_patterns','best_hour','country_map','platform_radar'],
+        'Agency / Marketing Team': ['platform_comp','viral_patterns','funnel','country_map','platform_radar'],
+        'Beginner Creator': ['best_hour','best_day','content_mix','country_map','platform_radar'],
+        'Explorer': ['heatmap','content_mix','viral_patterns','funnel','country_map','platform_radar']
     }
     
     default_graphs = mapping.get(user_type, mapping['Explorer'])
@@ -505,11 +832,13 @@ def get_data():
     
     try:
         if show_all or 'content_mix' in default_graphs:
-            result = content_mix(df_filtered)
-            if result and len(result) > 0:
+            result = competitive_niche_analysis(df_filtered, metric)
+            if result:
                 charts['content_mix'] = result
     except Exception as e:
-        print(f"Error generating content_mix: {e}")
+        print(f"Error generating competitive_niche_analysis: {e}")
+        import traceback
+        traceback.print_exc()
     
     try:
         if show_all or 'funnel' in default_graphs:
@@ -590,6 +919,26 @@ def get_data():
                 charts['country_map'] = result
     except Exception as e:
         print(f"Error generating country_map: {e}")
+    
+    try:
+        if show_all or 'viral_patterns' in default_graphs:
+            result = viral_content_patterns(df_filtered)
+            if result:
+                charts['viral_patterns'] = result
+    except Exception as e:
+        print(f"Error generating viral_patterns: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    try:
+        if show_all or 'platform_radar' in default_graphs:
+            result = platform_radar_chart(df_filtered)
+            if result and len(result) > 0:
+                charts['platform_radar'] = result
+    except Exception as e:
+        print(f"Error generating platform_radar: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Generate insights
     insights = {}
